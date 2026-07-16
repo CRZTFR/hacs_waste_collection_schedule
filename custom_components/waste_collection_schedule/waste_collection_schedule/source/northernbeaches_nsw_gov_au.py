@@ -85,15 +85,14 @@ class Source:
                 break
 
         if property_id is None:
-            if len(results) == 1:
-                # Single result - use it
-                property_id = results[0]["id"]
-            else:
-                # Multiple matches, none exact - provide suggestions
-                suggestions = [entry["value"] for entry in results]
-                raise SourceArgAmbiguousWithSuggestions(
-                    "address", self._address, suggestions
-                )
+            # No exact match - return all results as suggestions so the user
+            # can confirm the full canonical address (e.g. suburb appended).
+            # (Local Bindicator preference; differs from upstream which uses
+            # the single result when there's only one.)
+            suggestions = [entry["value"] for entry in results]
+            raise SourceArgAmbiguousWithSuggestions(
+                "address", self._address, suggestions
+            )
 
         # Step 2: Get collection schedule HTML
         r = requests.post(

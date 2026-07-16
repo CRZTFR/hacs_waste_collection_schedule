@@ -1,9 +1,13 @@
+import re
 from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup
 from waste_collection_schedule import Collection, Icons  # type: ignore[attr-defined]
-from waste_collection_schedule.exceptions import SourceArgumentNotFound
+from waste_collection_schedule.exceptions import (
+    SourceArgAmbiguousWithSuggestions,
+    SourceArgumentNotFound,
+)
 
 TITLE = "Lake Macquarie City Council"
 DESCRIPTION = "Source for Lake Macquarie City Council, Australia."
@@ -19,6 +23,18 @@ ICON_MAP = {
     "Green waste": Icons.GARDEN,
     "Bulk waste": Icons.GENERAL_WASTE,
 }
+
+
+def _normalise_address(s: str) -> str:
+    """Lowercase + collapse whitespace + drop trailing commas/spaces, so the
+    user's "11 the circlet rathmines" matches the API's canonical
+    "11 The Circlet, RATHMINES  NSW  2283" — minus the suburb/state/postcode
+    that the user may or may not have typed.
+
+    Returns the cleaned full-string for exact comparison; partial matching
+    is handled separately by returning the API's hits as suggestions.
+    """
+    return re.sub(r"\s+", " ", s.strip().lower())
 
 
 class Source:
@@ -39,12 +55,36 @@ class Source:
 
         addresses = r.json()
 
-        if addresses == 0:
+        items = addresses.get("Items", []) if isinstance(addresses, dict) else []
+        if not items:
             raise SourceArgumentNotFound("address", self._address)
+
+        # Try to find an exact match (case- and whitespace-tolerant) against
+        # the canonical `AddressSingleLine`. If we have one, use it; otherwise
+        # return the search hits as suggestions so the user can pick. This
+        # also drives the typeahead behaviour via /suggest — partial input
+        # produces a list of candidate addresses instead of silently using
+        # the first hit.
+        wanted = _normalise_address(self._address)
+        exact = None
+        for item in items:
+            if _normalise_address(item.get("AddressSingleLine", "")) == wanted:
+                exact = item
+                break
+
+        if exact is None:
+            suggestions = [
+                item["AddressSingleLine"]
+                for item in items[:10]
+                if item.get("AddressSingleLine")
+            ]
+            raise SourceArgAmbiguousWithSuggestions(
+                "address", self._address, suggestions
+            )
 
         url = "https://www.lakemac.com.au/ocapi/Public/myarea/wasteservices"
 
-        params = {"geolocationid": addresses["Items"][0]["Id"], "ocsvclang": "en-AU"}
+        params = {"geolocationid": exact["Id"], "ocsvclang": "en-AU"}
 
         r = requests.get(url, params=params, headers=headers)
         r.raise_for_status()
