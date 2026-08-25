@@ -8,7 +8,7 @@ TITLE = "Lake Macquarie City Council"
 DESCRIPTION = "Source for Lake Macquarie City Council, Australia."
 URL = "https://www.lakemac.com.au/"
 TEST_CASES = {
-    "TestcaseI": {"address": "te"},
+    "TestcaseI": {"address": "11 The Circlet, RATHMINES NSW 2283"},
     "TestcaseII": {"address": "386 Pacific Highway, MURRAYS BEACH NSW 2281"},
 }
 
@@ -27,6 +27,12 @@ _CONFIG = OpenCitiesConfig(
     domain="https://www.lakemac.com.au",
     headers=HEADERS,
     icon_keywords=ICON_MAP,
+    # This deployment's search answers an unrelated query with one
+    # confident-looking hit ("2 Wallarah Rd" -> "2 Lake Ridge Lane, MURRAYS
+    # BEACH"), so require a real address match -- including when there is only
+    # one result -- and offer the hits as suggestions otherwise.
+    strict_address_matching=True,
+    strict_single_result=True,
 )
 
 

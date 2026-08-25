@@ -5,13 +5,24 @@ from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup, Tag
 from waste_collection_schedule import Collection, Icons  # type: ignore[attr-defined]
+from waste_collection_schedule.exceptions import (
+    SourceArgAmbiguousWithSuggestions,
+    SourceArgumentNotFound,
+    SourceArgumentNotFoundWithSuggestions,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 TITLE = "Stroud District Council"
 DESCRIPTION = "Source for Stroud District Council."
 URL = "https://stroud.gov.uk"
-TEST_CASES = {"GL6+9BW 100120517945": {"postcode": "GL6 9BW", "uprn": 100120517945}}
+TEST_CASES = {
+    "GL6+9BW 100120517945": {"postcode": "GL6 9BW", "uprn": 100120517945},
+    "Rectory Cottage via address": {
+        "postcode": "GL6 9BW",
+        "address": "Rectory Cottage, 6 Market Square",
+    },
+}
 
 
 ICON_MAP = {
@@ -23,6 +34,7 @@ ICON_MAP = {
 
 
 API_URL = "https://www.stroud.gov.uk/my-house"
+ADDRESS_URL = "https://www.stroud.gov.uk/webservice/getaddress"
 
 # Wednesday 24 July 2024
 DATE_REGEX = r"(\w+day) (\d{1,2}) (\w+) (\d{4})"
@@ -43,10 +55,63 @@ def get_icon(bin_type: str) -> str | None:
     return ICON_MAP.get(bin_type.split()[0].lower())
 
 
+def _address_tokens(value: str) -> tuple[str, ...]:
+    return tuple(re.findall(r"[a-z0-9]+", value.lower()))
+
+
 class Source:
-    def __init__(self, postcode: str, uprn: str | int):
+    def __init__(
+        self,
+        postcode: str,
+        uprn: str | int | None = None,
+        address: str | None = None,
+    ):
         self._postcode: str = postcode.strip()
-        self._uprn: str = str(uprn).replace("+", " ")
+        self._uprn = str(uprn).replace("+", " ") if uprn else None
+        self._address = " ".join((address or "").split())
+        if not self._uprn and not self._address:
+            raise SourceArgumentNotFound("address", self._address)
+
+    def _resolve_uprn(self) -> str:
+        response = requests.get(
+            ADDRESS_URL,
+            params={"postcode": self._postcode, "page": 0},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        candidates = payload.get("addressList") or []
+        count = int(payload.get("count") or len(candidates) or 1)
+        total = int(payload.get("totalCount") or len(candidates))
+        for page in range(1, (total + count - 1) // count):
+            page_response = requests.get(
+                ADDRESS_URL,
+                params={"postcode": self._postcode, "page": page},
+            )
+            page_response.raise_for_status()
+            candidates.extend(page_response.json().get("addressList") or [])
+
+        if not candidates:
+            raise SourceArgumentNotFound("postcode", self._postcode)
+
+        wanted = _address_tokens(self._address)
+        matches = [
+            item
+            for item in candidates
+            if _address_tokens(str(item.get("address") or ""))[: len(wanted)] == wanted
+        ]
+        if len(matches) == 1:
+            return str(matches[0]["uprn"])
+
+        suggestions = [str(item.get("address") or "") for item in candidates]
+        if len(matches) > 1:
+            raise SourceArgAmbiguousWithSuggestions(
+                "address",
+                self._address,
+                [str(item.get("address") or "") for item in matches],
+            )
+        raise SourceArgumentNotFoundWithSuggestions(
+            "address", self._address, suggestions
+        )
 
     def _parse_date_in_title(self, bin_type: str) -> Collection:
         # Trash collection date
@@ -123,6 +188,9 @@ class Source:
         return entries
 
     def fetch(self) -> list[Collection]:
+        if not self._uprn:
+            self._uprn = self._resolve_uprn()
+
         params = {"postcode": self._postcode, "uprn": self._uprn}
 
         r = requests.get(API_URL, params=params)

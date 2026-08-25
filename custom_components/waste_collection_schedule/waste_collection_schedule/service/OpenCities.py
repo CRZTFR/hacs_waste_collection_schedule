@@ -114,6 +114,21 @@ class OpenCitiesConfig:
     "ambiguous" failure.
     """
 
+    strict_single_result: bool = False
+    """
+    Only meaningful with ``strict_address_matching``. By default a lone search
+    result is trusted even under strict matching, on the assumption that one
+    hit means the API was confident. A few deployments' search is loose enough
+    to answer an unrelated query with exactly one wrong hit -- lakemac returns
+    the single result "2 Lake Ridge Lane, MURRAYS BEACH" for the query
+    "2 Wallarah Rd" -- and there strict matching needs to apply to a single
+    result too, so the caller is offered it as a suggestion to confirm rather
+    than silently handed another property's bins. Left off by default because
+    for most councils the lone hit is right and merely formatted differently
+    from what the user typed (a missing state abbreviation or postcode), which
+    would otherwise turn a correct resolution into a hard failure.
+    """
+
     require_date_precise: bool = False
     """
     If True, only wasteservices blocks additionally carrying a
@@ -264,7 +279,9 @@ class OpenCitiesClient:
     def _select_address(self, address: str, items: list[dict[str, Any]]) -> str:
         if not items:
             raise SourceArgumentNotFound(self._cfg.argument_name, address)
-        if len(items) == 1 or not self._cfg.strict_address_matching:
+        if not self._cfg.strict_address_matching:
+            return items[0]["Id"]
+        if len(items) == 1 and not self._cfg.strict_single_result:
             return items[0]["Id"]
 
         normalized = address.lower().replace(" ", "")
