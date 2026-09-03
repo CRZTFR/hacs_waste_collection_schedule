@@ -30,9 +30,7 @@ TEST_CASES = {
         _STREET_ADDRESS_ARG_NAME: "4 Staniland Grove, Elsternwick VIC 3185"
     },
     "No suburb": {_STREET_ADDRESS_ARG_NAME: "4 Staniland Grove"},
-    "Abbreviated street type": {
-        _STREET_ADDRESS_ARG_NAME: "1 Nepean Hwy, Elsternwick"
-    },
+    "Abbreviated street type": {_STREET_ADDRESS_ARG_NAME: "1 Nepean Hwy, Elsternwick"},
 }
 
 SEARCH_PAGE_URL = "https://www.gleneira.vic.gov.au/our-city/in-your-area"
@@ -121,6 +119,7 @@ def _query_variants(address: str) -> list[str]:
     if len(words) > 3:
         variants.append(" ".join(words[:3]))
     return list(dict.fromkeys(v for v in variants if v))
+
 
 # Define waste type icons
 ICON_MAP = {
