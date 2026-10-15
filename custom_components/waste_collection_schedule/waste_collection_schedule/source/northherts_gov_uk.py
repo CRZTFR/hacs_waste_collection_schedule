@@ -69,5 +69,7 @@ class Source:
             address_name_number=self._address_name_numer,
             address_street=self._address_street,
             street_town=self._street_town,
-            argument_name="address_postcode",
+            # Suggestions are whole addresses. Attached to the postcode, a picked one
+            # replaced it and the lookup failed again; this field matches it exactly.
+            argument_name="address_name_numer",
         )
